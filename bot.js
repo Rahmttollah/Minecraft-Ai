@@ -18,10 +18,13 @@ http.createServer((req, res) => {
 //       Aternos Safe Auto-Restart (No Crash)
 // =====================================================
 
+// =====================================================
+//      CRASH-PROOF ALWAYS MOVING BOT (WISPBYTE SAFE)
+// =====================================================
+
 function startBot() {
 
   const mineflayer = require("mineflayer")
-  const { pathfinder, Movements, goals } = require("mineflayer-pathfinder")
 
   let bot = mineflayer.createBot({
     host: "rahmttollahai.aternos.me",
@@ -29,131 +32,70 @@ function startBot() {
     username: "AlexBot"
   })
 
-  bot.loadPlugin(pathfinder)
-
-  let mcData
-  let lastChatTime = 0
-
-  // ------------ Helpers -------------
-  const clean = msg => msg.replace(/§./g, "").replace(/<.*?>/g, "").trim().toLowerCase()
   const sleep = ms => new Promise(r => setTimeout(r, ms))
 
-  function rateChat(msg) {
-    const now = Date.now()
-    if (now - lastChatTime < 4000) return
-    lastChatTime = now
-    try { bot.chat(msg) } catch {}
-  }
 
-  // ------------ Movement Setup -------------
-  function setupMoves() {
-    mcData = require("minecraft-data")(bot.version)
-    bot.movements = new (require("mineflayer-pathfinder").Movements)(bot, mcData)
-    bot.movements.allowSprinting = true
-    bot.pathfinder.setMovements(bot.movements)
-  }
-
-  // ------------ Basic Go Command -------------
-  async function goTo(x, y, z) {
-    setupMoves()
-    try { bot.pathfinder.setGoal(null) } catch {}
-    bot.pathfinder.setGoal(new goals.GoalBlock(x, y, z))
-    rateChat(`Ja raha hoon ${x} ${y} ${z}`)
-  }
-
-  // ------------ Follow Player -------------
-  function geyserPlayer(name) {
-    const low = name.toLowerCase()
-    const list = Object.values(bot.players)
-    return (
-      list.find(p => p.username?.toLowerCase() === "." + low) ||
-      list.find(p => p.username?.toLowerCase().includes("." + low)) ||
-      list.find(p => p.username?.toLowerCase().includes(low)) ||
-      null
-    )
-  }
-
-  async function follow(username) {
-    const p = geyserPlayer(username)
-    if (!p || !p.entity) return rateChat("Player not found")
-    rateChat("Following " + p.username)
-    bot.pathfinder.setGoal(new goals.GoalFollow(p.entity, 2), true)
-  }
-
-  // ------------ Simple Autoplay -------------
-  async function autoPlay() {
-    while (true) {
-      await sleep(3000)
-
-      // minimal random walk
-      const pos = bot.entity.position
-      const dx = (Math.random() * 10 - 5)
-      const dz = (Math.random() * 10 - 5)
-
-      setupMoves()
-      bot.pathfinder.setGoal(new goals.GoalBlock(pos.x + dx, pos.y, pos.z + dz))
-    }
-  }
-
-  // ------------ Chat Commands -------------
-  bot.on("chat", async (username, message) => {
-    if (username === bot.username) return
-
-    const msg = clean(message)
-    const parts = msg.split(" ")
-
-    // FOLLOW ME
-    if (msg === "follow me" || msg === "follow") {
-      follow(username)
-      return
-    }
-
-    // GO x y z
-    if (parts[0] === "go" || parts[0] === "goto") {
-      const x = parseFloat(parts[1])
-      const y = parseFloat(parts[2])
-      const z = parseFloat(parts[3])
-      if (!isNaN(x) && !isNaN(y) && !isNaN(z)) goTo(x, y, z)
-      else rateChat("Format: go x y z")
-      return
-    }
-
-    rateChat("Samjha: " + msg)
-  })
-
-  // ------------ On Spawn -------------
   bot.on("spawn", () => {
-    rateChat("Light Bot Online ✔")
-    setupMoves()
-    autoPlay() // start minimal autoplay
+    console.log("BOT ONLINE ✔")
+    smoothMovement()
   })
 
-  // ========================================================
-  //            ANTI-CRASH / CLEAN AUTO RESTART
-  // ========================================================
 
+  // ------------------------------------------
+  //   ULTRA-SMOOTH LOW-CPU MOVEMENT LOOP
+  // ------------------------------------------
+  async function smoothMovement() {
+
+    let moving = true
+
+    // enable forward movement
+    bot.setControlState("forward", true)
+
+    while (moving) {
+
+      // random small yaw change (every 2 sec)
+      const yaw = Math.random() * Math.PI * 2
+      bot.look(yaw, 0, true)
+
+      // jump occasionally
+      if (Math.random() < 0.4) {
+        bot.setControlState("jump", true)
+        await sleep(200)
+        bot.setControlState("jump", false)
+      }
+
+      // VERY IMPORTANT:
+      // wait 200ms → prevents CPU spikes
+      await sleep(200)
+    }
+  }
+
+
+  // =====================================================
+  //               AUTO-RESTART (12 sec delay)
+  // =====================================================
+  
   let reconnecting = false
 
   function restartBot() {
     if (reconnecting) return
     reconnecting = true
 
-    console.log("\n[!] Bot disconnected — retry in 15s...\n")
+    console.log("\n[!] Disconnected — retry in 12s...\n")
 
     try { bot.quit() } catch {}
     bot = null
 
     setTimeout(() => {
       reconnecting = false
-      console.log("[+] Reconnecting now...")
+      console.log("[+] Reconnecting...")
       startBot()
-    }, 15000)
+    }, 12000)
   }
 
+  bot.on("error", restartBot)
   bot.on("end", restartBot)
   bot.on("kicked", restartBot)
-  bot.on("error", restartBot)
 }
 
-// FIRST START
 startBot()
