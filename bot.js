@@ -35,6 +35,7 @@ function startBot() {
     host: "rahmttollahai.aternos.me",
     port: 48219,
     username: "Rahmttollah_Ai_Bot"
+    version: false
   })
 
   const sleep = ms => new Promise(r => setTimeout(r, ms))
