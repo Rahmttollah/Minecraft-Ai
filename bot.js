@@ -77,7 +77,7 @@ function startBot() {
       reconnecting = false
       console.log("[+] Reconnecting...")
       startBot()
-    }, 12000)
+    }, 20000)
   }
 
   bot.on("error", restartBot)
