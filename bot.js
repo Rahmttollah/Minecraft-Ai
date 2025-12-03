@@ -34,7 +34,7 @@ function startBot() {
   let bot = mineflayer.createBot({
     host: "rahmttollahai.aternos.me",
     port: 48219,
-    username: "AiBot100"
+    username: "RahmttollahAiBot100"
   })
 
   const sleep = ms => new Promise(r => setTimeout(r, ms))
