@@ -22,6 +22,11 @@ http.createServer((req, res) => {
 
 
 
+
+
+
+
+
 function startBot() {
 
   // final_bot_v2_pathfinder_pvp_crafting.js
@@ -326,167 +331,232 @@ async function engageHostile(target){
       await attackEntity(target)
       await sleep(400)
       // refresh entity ref
-      target = bot.entities[target.id]
+const mineflayer = require("mineflayer")
+  const vec3 = require("vec3")
+
+  let bot = mineflayer.createBot({
+    host: "rahmttollahai.aternos.me",
+    port: 48219,
+    username: "AlexBot"
+  })
+
+  const sleep = ms => new Promise(r => setTimeout(r, ms))
+
+  // Movement tuning
+  const MOVE_INTERVAL = 220
+  const JUMP_CHANCE = 0.45
+  const SPRINT_CHANCE = 0.25
+  const SNEAK_CHANCE = 0.12
+
+  function forwardVector(yaw) {
+    const dx = -Math.sin(yaw)
+    const dz = Math.cos(yaw)
+    return { dx, dz }
+  }
+
+  function blockAtOffset(x, y, z) {
+    const pos = bot.entity.position
+    return bot.blockAt(vec3(
+      Math.floor(pos.x + x),
+      Math.floor(pos.y + y),
+      Math.floor(pos.z + z)
+    ))
+  }
+
+  function isSpaceAhead(dist = 1, height = 1) {
+    const yaw = bot.entity.yaw
+    const { dx, dz } = forwardVector(yaw)
+    for (let h = 0; h < height; h++) {
+      const b = blockAtOffset(dx * dist, h, dz * dist)
+      if (b && b.boundingBox !== "empty") return false
     }
-    await collectNearbyItems(8)
-    await eatIfHungry()
     return true
-  } catch(e){ console.log("engageHostile err", e && e.message); return false }
-}
+  }
 
-// ---------- auto sleep improved ----------
-async function autoSleepCheck(){
-  try {
-    if(!bot.time) return
-    const tod = bot.time.timeOfDay
-    if(typeof tod === "number" && tod > 13000 && !bot.isSleeping){
-      rateLimitedChat("Night -> searching bed", 10000)
-      // wider search: try 60 then 120
-      let bed = bot.findBlock({ maxDistance: 60, matching: b=>b.name && b.name.includes("bed") })
-      if(!bed) bed = bot.findBlock({ maxDistance: 120, matching: b=>b.name && b.name.includes("bed") })
-      if(!bed) return
-      const ok = await walkToNear(bed.position.x, bed.position.y, bed.position.z, 1, 25000)
-      if(!ok) { rateLimitedChat("Can't reach bed",10000); return }
-      try { await bot.sleep(bot.blockAt(bed.position)); rateLimitedChat("Soya ✔",10000); } catch(e){
-        rateLimitedChat("Bed occupied -> nudge",10000)
-        const occ = bot.nearestEntity(e=>e.type==="player" && e.position.distanceTo(bed.position) < 2)
-        if(occ){ try{ bot.attack(occ) } catch(e){}; await sleep(400) }
-        try{ await bot.sleep(bot.blockAt(bed.position)); rateLimitedChat("Soya ab ✔",10000); } catch(e){ rateLimitedChat("Bed still occupied",10000) }
-      }
+  function groundAhead(dist = 1) {
+    const yaw = bot.entity.yaw
+    const { dx, dz } = forwardVector(yaw)
+    return blockAtOffset(dx * dist, -1, dz * dist)
+  }
+
+  function gapLengthAhead(max = 6) {
+    const yaw = bot.entity.yaw
+    const { dx, dz } = forwardVector(yaw)
+    for (let g = 0; g <= max; g++) {
+      const b = blockAtOffset(dx * (g + 1), -1, dz * (g + 1))
+      if (b && b.boundingBox !== "empty") return g
     }
-  } catch(e){ console.log("autoSleepCheck err", e && e.message) }
-}
+    return max + 1
+  }
 
-// ---------- autoplayer main loop ----------
-async function autoLoop(){
-  while(true){
-    try{
-      await sleep(1200)
-      await autoEquipArmor()
-      await eatIfHungry()
-      await craftToolIfPossible()
-      await autoSleepCheck()
-
-      // always available tasks when autoMode true
-      if(autoMode){
-        // check hostiles first (aggressive)
-        const nearHostiles = Object.values(bot.entities).filter(e=>e && e.type==="mob" && e.position && bot.entity.position.distanceTo(e.position) < 12)
-        if(nearHostiles.length){
-          // pick best hostile
-          let target = nearHostiles.find(h=>h.name && (h.name.includes("zombie")||h.name.includes("skeleton")||h.name.includes("spider")))
-          if(!target) target = nearHostiles[0]
-          if(target){
-            if(shouldFight(target)){
-              rateLimitedChat("Enemy spotted — fight",7000)
-              await engageHostile(target)
-              continue
-            } else {
-              // avoid
-              rateLimitedChat("Enemy spotted — avoid",7000)
-              const pos = bot.entity.position
-              const away = { x: pos.x + (pos.x - target.position.x)*2, y: pos.y, z: pos.z + (pos.z - target.position.z)*2 }
-              await walkToGoal(away.x, away.y, away.z, 12000)
-              continue
-            }
-          }
-        }
-
-        // collect nearby items
-        await collectNearbyItems(10)
-
-        // do farming if crop nearby
-        const crop = bot.findBlock({ maxDistance:18, matching: b=>b.name && (b.name.includes("wheat")||b.name.includes("carrots")||b.name.includes("potatoes")||b.name.includes("beetroots")) })
-        if(crop){ await walkToNear(crop.position.x,crop.position.y,crop.position.z,1,12000); await safeDigTarget(bot.blockAt(crop.position)); await collectNearbyItems(6); continue }
-
-        // chop trees if found
-        const tree = bot.findBlock({ maxDistance:28, matching: b=>b.name && (b.name.includes("log")||b.name.includes("wood")) })
-        if(tree){ await chopTreeFull(); continue }
-
-        // wander/explore
-        const x = bot.entity.position.x + (Math.random()*12 - 6)
-        const z = bot.entity.position.z + (Math.random()*12 - 6)
-        await walkToGoal(x, bot.entity.position.y, z, 10000)
-      }
-
-    } catch(e){
-      console.log("autoLoop err", e && e.stack || e)
+  // ================ AUTO EAT ================
+  async function eatIfHungry() {
+    if (bot.food !== undefined && bot.food > 16) return
+    const food = bot.inventory.items().find(i =>
+      ["bread","apple","cooked","steak","pork","chicken","carrot","potato"].some(f => i.name.includes(f))
+    )
+    if (food) {
+      try {
+        await bot.equip(food, "hand")
+        await bot.consume()
+      } catch {}
     }
   }
-}
 
-// ---------- pathfinder logs (reduced) ----------
-bot.on('path_update', r => { try { if(r && r.status && r.status !== 'noPath') console.log('[path_update]', r.status, 'len=' + r.path.length) } catch(e){} })
-bot.on('goal_reached', g => { console.log('[pathfinder] goal_reached'); rateLimitedChat('Reached', 9000) })
-bot.on('path_reset', reason => { console.log('[pathfinder] path_reset', reason); rateLimitedChat('Path reset', 9000) })
+  // ================ IDLE HEAD MOVEMENT ================
+  async function idleHeadLoop() {
+    while (true) {
+      await sleep(8000 + Math.random() * 8000)
+      if (!bot.entity) continue
 
-// ---------- spawn ----------
-bot.on('spawn', () => {
-  setupMovements()
-  rateLimitedChat("AI BOT ready — Pathfinder + PvP + Crafting", 9000)
-  autoLoop().catch(e=>console.log("autoLoop start err", e && e.message))
-})
+      const r = Math.random()
+      try {
+        if (r < 0.4) bot.look(bot.entity.yaw, -0.6, true)
+        else if (r < 0.8) bot.look(bot.entity.yaw + (Math.random() > 0.5 ? 0.5 : -0.5), 0, true)
+        else bot.look(bot.entity.yaw, 0.2, true)
+      } catch {}
 
-// ---------- chat commands ----------
-bot.on('chat', async (username, message) => {
-  if(!bot || username === bot.username) return
-  const raw = cleanMessage(message)
-  const parts = raw.split(/\s+/).filter(Boolean)
-  lastCommandTime = Date.now()
-  autoMode = false
-
-  try{
-    if(raw === "follow me" || raw === "follow"){
-      const p = getGeyserPlayer(username)
-      if(!p || !p.entity){ rateLimitedChat("Player detect nahi",8000); console.log("players", bot.players); return }
-      rateLimitedChat("Following " + p.username,8000)
-      bot.pathfinder.setGoal(new goals.GoalFollow(p.entity, 2), true); return
+      await sleep(500)
+      try { bot.look(bot.entity.yaw, 0, true) } catch {}
     }
+  }
 
-    if(parts[0] === "guard"){
-      await startGuardForPlayer(username); return
-    }
+  // ================ MOVEMENT LOOP ================
+  async function movementLoop() {
+    bot.setControlState("forward", true)
+    let sprinting = false
+    let sneaking = false
 
-    if(["go","goto","jao","chalo","jaa"].includes(parts[0])){
-      const x = parseFloat(parts[1]), y = parseFloat(parts[2]), z = parseFloat(parts[3])
-      if(isNaN(x)||isNaN(y)||isNaN(z)) return rateLimitedChat("Usage: go x y z",8000)
-      rateLimitedChat(`Going to ${x} ${y} ${z}`,8000)
-      await walkToGoal(x,y,z); return
-    }
+    setInterval(eatIfHungry, 7000)
 
-    if(parts[0] === "find" || parts[0] === "dhoondo" || parts[0] === "dhoond"){
-      await findThing(parts[1], username); return
-    }
+    while (true) {
+      if (!bot.entity) { await sleep(200); continue }
 
-    if(raw === "chop tree" || raw === "choptree"){ await chopTreeFull(); return }
+      // smooth random turn
+      const yaw = bot.entity.yaw + (Math.random() * 0.6 - 0.3)
+      try { bot.look(yaw, 0, true) } catch {}
 
-    if(parts[0] === "bridge"){
-      const len = parseInt(parts[1]) || 6
-      rateLimitedChat("Bridge start "+len,8000)
-      const plank = bot.inventory.items().find(i=>i.name && i.name.includes("planks"))
-      if(!plank) return rateLimitedChat("Planks chahiye",8000)
-      await bot.equip(plank,"hand").catch(()=>{})
-      for(let i=0;i<len;i++){
-        const under = bot.blockAt(bot.entity.position.offset(0,-1,0))
-        try{ if(under && under.name === "air"){ const ref = bot.blockAt(bot.entity.position); if(ref) await bot.placeBlock(ref, vec3(0,-1,0)).catch(()=>{}) } } catch(e){}
-        await sleep(350)
+      const space = isSpaceAhead(1, 1)
+      const ground = groundAhead(1)
+      const gap = gapLengthAhead(6)
+
+      // obstacle ahead
+      if (!space) {
+        const headFree = isSpaceAhead(1, 2)
+        if (headFree && ground && ground.boundingBox !== "empty") {
+          bot.setControlState("jump", true)
+          await sleep(200)
+          bot.setControlState("jump", false)
+        } else {
+          try { bot.look(bot.entity.yaw + (Math.random() > 0.5 ? 1 : -1), 0, true) } catch {}
+        }
+
+        if (sprinting) { bot.setControlState("sprint", false); sprinting = false }
       }
-      rateLimitedChat("Bridge done",8000); return
+
+      // gap parkour
+      else if (gap >= 2) {
+        if (!sprinting) {
+          bot.setControlState("sprint", true)
+          sprinting = true
+        }
+        bot.setControlState("jump", true)
+        await sleep(300)
+        bot.setControlState("jump", false)
+      }
+
+      // normal movement
+      else {
+        if (!sprinting && Math.random() < SPRINT_CHANCE) {
+          bot.setControlState("sprint", true)
+          sprinting = true
+        } else if (sprinting && Math.random() < 0.15) {
+          bot.setControlState("sprint", false)
+          sprinting = false
+        }
+
+        if (!sneaking && Math.random() < SNEAK_CHANCE) {
+          bot.setControlState("sneak", true)
+          sneaking = true
+          await sleep(700 + Math.random() * 400)
+          bot.setControlState("sneak", false)
+          sneaking = false
+        }
+
+        if (Math.random() < JUMP_CHANCE * 0.4) {
+          bot.setControlState("jump", true)
+          await sleep(200)
+          bot.setControlState("jump", false)
+        }
+      }
+
+      await sleep(MOVE_INTERVAL)
     }
+  }
 
-    if(parts[0] === "mode"){
-      if(parts[1] === "auto"){ autoMode=true; return rateLimitedChat("Auto ON",8000) }
-      if(parts[1] === "manual"){ autoMode=false; return rateLimitedChat("Auto OFF",8000) }
+  // ================ AUTO SLEEP ================
+  async function autoSleepLoop() {
+    while (true) {
+      await sleep(2500)
+
+      if (!bot.time) continue
+      if (bot.time.timeOfDay <= 13000 || bot.isSleeping) continue
+
+      const bed = bot.findBlock({
+        matching: b => b.name && b.name.includes("bed"),
+        maxDistance: 80
+      })
+      if (!bed) continue
+
+      const target = bed.position
+      while (bot.entity && bot.entity.position.distanceTo(target) > 2) {
+        const dx = target.x - bot.entity.position.x
+        const dz = target.z - bot.entity.position.z
+        const yaw = Math.atan2(-dx, -dz)
+        try { bot.look(yaw, 0, true) } catch {}
+
+        bot.setControlState("forward", true)
+        if (Math.random() < 0.1) {
+          bot.setControlState("jump", true)
+          await sleep(200)
+          bot.setControlState("jump", false)
+        }
+        await sleep(250)
+      }
+
+      bot.setControlState("forward", false)
+
+      try {
+        await bot.sleep(bot.blockAt(target))
+      } catch {}
     }
+  }
 
-    if(parts[0] === "inv"){
-      const items = bot.inventory.items().map(i=>`${i.name} x${i.count}`).slice(0,20)
-      return rateLimitedChat("Inv: "+items.join(", "),8000)
-    }
+  // ================ EVENTS ================
+  bot.on("spawn", () => {
+    movementLoop()
+    idleHeadLoop()
+    autoSleepLoop()
+  })
 
-    rateLimitedChat("Samjha: "+message,8000)
-  } catch(e){ console.log("chat handler err", e && e.stack || e) }
-})
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+      
 // ---------- disconnect ----------
 
   // =====================================================
