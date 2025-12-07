@@ -1,41 +1,49 @@
 const mineflayer = require('mineflayer');
 const Movements = require('mineflayer-pathfinder').Movements;
 const pathfinder = require('mineflayer-pathfinder').pathfinder;
-const { GoalNear, GoalBlock } = require('mineflayer-pathfinder').goals;
+const { GoalNear } = require('mineflayer-pathfinder').goals;
 
 const config = require('./settings.json');
 const express = require('express');
+const { v4: uuidv4 } = require('uuid');
 
-// -----------------------
-// USERNAME ROTATION SYSTEM
-// -----------------------
-let usernameIndex = 0;
-
-function getBotUsername() {
-  return config['bot-account'].usernames[usernameIndex];
-}
-
-function rotateUsername() {
-  usernameIndex++;
-  if (usernameIndex >= config['bot-account'].usernames.length) {
-    usernameIndex = 0;
-  }
-  return config['bot-account'].usernames[usernameIndex];
-}
-
-// -----------------------------------
+// Web server (Render/Host)
 const app = express();
-app.get('/', (req, res) => res.send('Bot is arrived bed'));
-app.listen(8000, () => console.log('server started'));
+app.get('/', (req, res) => res.send('Bot Online'));
+app.listen(8000, () => console.log("Web server running..."));
 
+// ------------------------------
+// GLOBAL IDENTITY (changes only on ban)
+// ------------------------------
+let currentName = randomName();
+let currentUUID = uuidv4();
+
+// Prevent multiple bots
+let bot = null;
+let botRunning = false;
+
+
+// RANDOM NAME GENERATOR
+function randomName() {
+  return "Player_" + Math.floor(Math.random() * 999999);
+}
+
+
+// MAIN BOT FUNCTION
 function createBot() {
-  const bot = mineflayer.createBot({
-    username: getBotUsername(),            // FIXED USERNAME HANDLER
-    password: config['bot-account']['password'],
-    auth: config['bot-account']['type'],
+
+  if (botRunning) return;
+  botRunning = true;
+
+  console.log(`\n[START] Using identity → ${currentName} | ${currentUUID}`);
+
+  bot = mineflayer.createBot({
+    username: currentName,
+    uuid: currentUUID,
+    auth: "offline",
     host: config.server.ip,
     port: config.server.port,
-    version: config.server.version,
+    version: config.server.version
   });
 
   bot.loadPlugin(pathfinder);
@@ -45,108 +53,117 @@ function createBot() {
 
   bot.settings.colorsEnabled = false;
 
-  bot.once('spawn', () => {
-    console.log(`[AfkBot] Bot joined as: ${bot.username}`);
 
-    // AUTO AUTH
-    if (config.utils['auto-auth'].enabled) {
-      let pass = config.utils['auto-auth'].password;
+  // ON SPAWN
+  bot.once('spawn', () => {
+    console.log("[AFK BOT] Joined server.");
+
+    // AUTO AUTH (if enabled)
+    if (config.utils["auto-auth"].enabled) {
+      const pass = config.utils["auto-auth"].password;
       setTimeout(() => {
         bot.chat(`/register ${pass} ${pass}`);
         bot.chat(`/login ${pass}`);
       }, 500);
     }
 
-    // RANDOM MOVEMENT
+    // ---------------------------
+    // SAFE RANDOM MOVEMENT LOOP
+    // ---------------------------
     function randomMovementLoop() {
-      const actions = [
-        () => bot.setControlState('forward', true),
-        () => bot.setControlState('back', true),
-        () => bot.setControlState('left', true),
-        () => bot.setControlState('right', true),
-        () => bot.setControlState('sneak', true),
-        () => bot.setControlState('jump', true),
-        () => bot.setControlState('sprint', true)
-      ];
-
-      const stops = ['forward','back','left','right','sneak','jump','sprint'];
-      stops.forEach(c => bot.setControlState(c, false));
-
-      let howMany = Math.floor(Math.random() * 3) + 1;
-      for (let i = 0; i < howMany; i++) {
-        let a = actions[Math.floor(Math.random() * actions.length)];
-        a();
+      // bot not ready = wait
+      if (!bot || !bot.entity) {
+        return setTimeout(randomMovementLoop, 2000);
       }
 
-      let next = Math.floor(Math.random() * 4000) + 3000;
-      setTimeout(randomMovementLoop, next);
+      const acts = ['forward', 'back', 'left', 'right', 'jump', 'sprint', 'sneak'];
+
+      // stop before starting new movement
+      acts.forEach(a => bot.setControlState(a, false));
+
+      let count = Math.floor(Math.random() * 3) + 1;
+      for (let i = 0; i < count; i++) {
+        let action = acts[Math.floor(Math.random() * acts.length)];
+        bot.setControlState(action, true);
+      }
+
+      setTimeout(randomMovementLoop, Math.floor(Math.random() * 4000) + 3000);
     }
 
+    // start movement safely  
     randomMovementLoop();
 
-    // AUTO SLEEP
+
+    // ---------------------------
+    // AUTO SLEEP SYSTEM
+    // ---------------------------
     async function trySleep() {
-      try {
-        if (!bot.time.isDay) {
-          console.log("Night detected → Searching bed...");
-          let bed = bot.findBlock({
-            matching: block => bot.isABed(block),
-            maxDistance: 20
-          });
+      if (!bot || !bot.entity) return;
+      if (bot.time.isDay) return;
 
-          if (bed) {
-            bot.pathfinder.setMovements(defaultMove);
-            bot.pathfinder.setGoal(new GoalNear(bed.position.x, bed.position.y, bed.position.z, 1));
+      let bed = bot.findBlock({
+        matching: b => bot.isABed(b),
+        maxDistance: 20
+      });
 
-            setTimeout(async () => {
-              try {
-                await bot.sleep(bed);
-                console.log("Bot is sleeping...");
-              } catch (err) {
-                console.log("Sleep error:", err.message);
-              }
-            }, 3000);
-          }
-        }
-      } catch (e) {}
+      if (!bed) return;
+
+      bot.pathfinder.setMovements(defaultMove);
+      bot.pathfinder.setGoal(new GoalNear(bed.position.x, bed.position.y, bed.position.z, 1));
+
+      setTimeout(async () => {
+        try {
+          await bot.sleep(bed);
+          console.log("[BOT] Sleeping...");
+        } catch (e) {}
+      }, 2500);
     }
+
     setInterval(trySleep, 5000);
   });
 
+
   // CHAT LOG
-  bot.on('chat', (u, msg) => console.log(`[ChatLog] <${u}> ${msg}`));
-
-  bot.on('goal_reached', () => console.log(`[AfkBot] Goal reached`));
-  bot.on('death', () => console.log("[AfkBot] Bot died & respawned"));
-
-  // --------------------------------------
-  //   BAN DETECT → USERNAME SWITCH
-  // --------------------------------------
-  bot.on('kicked', reason => {
-    console.log("[KICKED] ", reason);
-
-    const lower = reason.toString().toLowerCase();
-
-    if (lower.includes("ban")) {
-      console.log("BAN detected → switching username...");
-      const newName = rotateUsername();
-      console.log("NEW username:", newName);
-
-      setTimeout(createBot, 15000);
-      return;
+  bot.on("chat", (u, msg) => {
+    if (config.utils["chat-log"]) {
+      console.log(`[CHAT] <${u}> ${msg}`);
     }
-
-    setTimeout(createBot, config.utils['auto-recconect-delay']);
   });
 
-  bot.on('error', e => console.log("[ERROR]", e.message));
 
-  if (config.utils['auto-reconnect']) {
-    bot.on('end', () => {
-      console.log("Reconnecting...");
-      setTimeout(createBot, config.utils['auto-recconect-delay']);
-    });
-  }
+  // BAN / KICK HANDLER
+  bot.on("kicked", (reason) => {
+    console.log("\n[KICKED] " + reason);
+
+    reason = reason.toLowerCase();
+
+    if (reason.includes("ban")) {
+      console.log("[BAN DETECTED] Generating NEW identity...");
+      currentName = randomName();
+      currentUUID = uuidv4();
+    } else {
+      console.log("[INFO] Kick only → Keeping SAME identity");
+    }
+
+    botRunning = false;
+    setTimeout(createBot, config.utils["auto-recconect-delay"]);
+  });
+
+
+  // NORMAL DISCONNECT
+  bot.on("end", () => {
+    console.log("[END] Disconnected → Reconnecting with SAME identity...");
+    botRunning = false;
+    setTimeout(createBot, config.utils["auto-recconect-delay"]);
+  });
+
+
+  bot.on("error", err => {
+    console.log("[ERROR]", err.message);
+    botRunning = false;
+  });
 }
 
+
+// START BOT
 createBot();
