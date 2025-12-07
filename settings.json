@@ -1,6 +1,6 @@
 {
   "bot-account": {
-    "username": "Bot200K",
+    "usernames": ["Bot200K", "Bot200K_1", "Bot200K_2", "Bot200K_3"],
     "password": "",
     "type": "mojang"
   },
@@ -10,7 +10,7 @@
     "port": 48219,
     "version": "1.12.1"
   },
-  
+
   "position": {
     "enabled": false,
     "x": 0,
@@ -33,7 +33,6 @@
       "enabled": false,
       "repeat": true,
       "repeat-delay": 60,
-
       "messages": [
         "I'm a regular player",
         "My owner is Rahmttollah",
