@@ -1,32 +1,38 @@
 const mineflayer = require('mineflayer');
 const Movements = require('mineflayer-pathfinder').Movements;
 const pathfinder = require('mineflayer-pathfinder').pathfinder;
-const { GoalNear } = require('mineflayer-pathfinder').goals;
+const { GoalNear, GoalBlock } = require('mineflayer-pathfinder').goals;
 
 const config = require('./settings.json');
 const express = require('express');
 
+// -----------------------
+// USERNAME ROTATION SYSTEM
+// -----------------------
+let usernameIndex = 0;
+
+function getBotUsername() {
+  return config['bot-account'].usernames[usernameIndex];
+}
+
+function rotateUsername() {
+  usernameIndex++;
+  if (usernameIndex >= config['bot-account'].usernames.length) {
+    usernameIndex = 0;
+  }
+  return config['bot-account'].usernames[usernameIndex];
+}
+
+// -----------------------------------
 const app = express();
 app.get('/', (req, res) => res.send('Bot is arrived bed'));
 app.listen(8000, () => console.log('server started'));
 
-// -------- USERNAME ROTATION SYSTEM ----------
-let usernameIndex = 0;
-
-function getNextUsername() {
-  const list = config['bot-account'].usernames;
-  usernameIndex++;
-  if (usernameIndex >= list.length) usernameIndex = 0;
-  return list[usernameIndex];
-}
-// --------------------------------------------
-
 function createBot() {
-
   const bot = mineflayer.createBot({
-    username: config['bot-account'].usernames[usernameIndex],
-    password: config['bot-account'].password,
-    auth: config['bot-account'].type,
+    username: getBotUsername(),            // FIXED USERNAME HANDLER
+    password: config['bot-account']['password'],
+    auth: config['bot-account']['type'],
     host: config.server.ip,
     port: config.server.port,
     version: config.server.version,
@@ -40,7 +46,7 @@ function createBot() {
   bot.settings.colorsEnabled = false;
 
   bot.once('spawn', () => {
-    console.log('[AfkBot] Bot joined to server');
+    console.log(`[AfkBot] Bot joined as: ${bot.username}`);
 
     // AUTO AUTH
     if (config.utils['auto-auth'].enabled) {
@@ -66,8 +72,8 @@ function createBot() {
       const stops = ['forward','back','left','right','sneak','jump','sprint'];
       stops.forEach(c => bot.setControlState(c, false));
 
-      let count = Math.floor(Math.random() * 3) + 1;
-      for (let i = 0; i < count; i++) {
+      let howMany = Math.floor(Math.random() * 3) + 1;
+      for (let i = 0; i < howMany; i++) {
         let a = actions[Math.floor(Math.random() * actions.length)];
         a();
       }
@@ -78,12 +84,11 @@ function createBot() {
 
     randomMovementLoop();
 
-    // AUTO SLEEP AT NIGHT
+    // AUTO SLEEP
     async function trySleep() {
       try {
         if (!bot.time.isDay) {
           console.log("Night detected → Searching bed...");
-
           let bed = bot.findBlock({
             matching: block => bot.isABed(block),
             maxDistance: 20
@@ -91,9 +96,7 @@ function createBot() {
 
           if (bed) {
             bot.pathfinder.setMovements(defaultMove);
-            bot.pathfinder.setGoal(
-              new GoalNear(bed.position.x, bed.position.y, bed.position.z, 1)
-            );
+            bot.pathfinder.setGoal(new GoalNear(bed.position.x, bed.position.y, bed.position.z, 1));
 
             setTimeout(async () => {
               try {
@@ -110,39 +113,40 @@ function createBot() {
     setInterval(trySleep, 5000);
   });
 
-  // JUST CHAT LOG
+  // CHAT LOG
   bot.on('chat', (u, msg) => console.log(`[ChatLog] <${u}> ${msg}`));
 
   bot.on('goal_reached', () => console.log(`[AfkBot] Goal reached`));
   bot.on('death', () => console.log("[AfkBot] Bot died & respawned"));
 
-  // ---------- BAN / KICK DETECT ----------
-  bot.on('kicked', (reason) => {
-    console.log("KICKED =>", reason);
+  // --------------------------------------
+  //   BAN DETECT → USERNAME SWITCH
+  // --------------------------------------
+  bot.on('kicked', reason => {
+    console.log("[KICKED] ", reason);
 
-    const msg = reason.toString().toLowerCase();
-    if (msg.includes("ban") || msg.includes("banned")) {
-      console.log("Bot is BANNED! Changing username...");
+    const lower = reason.toString().toLowerCase();
 
-      const newName = getNextUsername();
-      console.log("New username =>", newName);
+    if (lower.includes("ban")) {
+      console.log("BAN detected → switching username...");
+      const newName = rotateUsername();
+      console.log("NEW username:", newName);
 
-      // wait 15 seconds then restart
       setTimeout(createBot, 15000);
       return;
     }
 
-    // normal kick -> reconnect
-    setTimeout(createBot, 15000);
+    setTimeout(createBot, config.utils['auto-recconect-delay']);
   });
-  // ----------------------------------------
 
-  bot.on('error', (err) => console.log("[ERROR]", err.message));
+  bot.on('error', e => console.log("[ERROR]", e.message));
 
-  bot.on('end', () => {
-    console.log("Bot disconnected → Reconnecting in 15 sec...");
-    setTimeout(createBot, 15000);
-  });
+  if (config.utils['auto-reconnect']) {
+    bot.on('end', () => {
+      console.log("Reconnecting...");
+      setTimeout(createBot, config.utils['auto-recconect-delay']);
+    });
+  }
 }
 
-createBot();createBot();
+createBot();
