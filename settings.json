@@ -6,8 +6,8 @@
   },
 
   "server": {
-    "ip": "Rahmttollahai.aternos.me",
-    "port": 48219,
+    "ip": "RNR-SMP.aternos.me:57748",
+    "port": 57748,
     "version": "1.12.1"
   },
 
