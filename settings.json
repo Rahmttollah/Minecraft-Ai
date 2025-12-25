@@ -6,7 +6,7 @@
   },
 
   "server": {
-    "ip": "RNR-SMP.aternos.me",
+    "ip": "RNR_SMP.aternos.me",
     "port": 57748,
     "version": "1.12.1"
   },
