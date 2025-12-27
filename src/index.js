@@ -58,6 +58,15 @@ function createBot() {
             }, 2000);
         }
 
+        // Join command logic
+        if (config.utils["join-command"]?.enabled) {
+            const cmd = config.utils["join-command"].command;
+            setTimeout(() => {
+                console.log(`[GAME] Executing join command: ${cmd}`);
+                bot.chat(cmd);
+            }, 4000);
+        }
+
         // Random movement to prevent AFK kick
         const movementLoop = () => {
             if (!bot?.entity) return setTimeout(movementLoop, 5000);
@@ -126,3 +135,4 @@ function createBot() {
 }
 
 createBot();
+
